@@ -17,7 +17,13 @@ pipeline {
             steps {
                 checkout scm
                 script {
-                    env.IMAGE_TAG = env.GIT_COMMIT.take(12)
+                    env.IMAGE_TAG = sh(
+                        script: 'git rev-parse --short=12 HEAD',
+                        returnStdout: true
+                    ).trim()
+                    if (!env.IMAGE_TAG) {
+                        error('Could not determine the checked-out Git commit for the image tag.')
+                    }
                 }
             }
         }
