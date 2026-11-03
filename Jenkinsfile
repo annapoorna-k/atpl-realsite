@@ -9,7 +9,7 @@ pipeline {
 
         K8S_NAMESPACE = 'default'
 
-        POSTGRES_PASSWORD = credentials('realsite-postgres-password')
+        POSTGRES_PASSWORD = credentials('postgress-credentials')
     }
 
     options {
