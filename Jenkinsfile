@@ -32,8 +32,8 @@ pipeline {
             steps {
                 withCredentials([usernamePassword(
                     credentialsId: 'dockerhub-credentials',
-                    usernameVariable: 'DOCKERHUB_USER',
-                    passwordVariable: 'DOCKERHUB_TOKEN'
+                    usernameVariable: 'yashuraj',
+                    passwordVariable: 'dckr_pat_KOvDp-bGd5ArGFIzB1zDdOfRlzA'
                 )]) {
                     sh '''#!/usr/bin/env bash
                         set -euo pipefail
