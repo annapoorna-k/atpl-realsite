@@ -1,197 +1,272 @@
-
 pipeline {
     agent any
+
+    environment {
+        DOCKERHUB_USER = 'yashuraj'
+
+        BACKEND_IMAGE  = 'yashuraj/realsite-backend'
+        FRONTEND_IMAGE = 'yashuraj/realsite-frontend'
+
+        K8S_NAMESPACE = 'default'
+
+        POSTGRES_PASSWORD = credentials('realsite-postgres-password')
+    }
 
     options {
         timestamps()
         disableConcurrentBuilds()
-        skipDefaultCheckout(true)
-    }
-
-    environment {
-        DOCKERHUB_NAMESPACE = 'yashuraj'
-        K8S_NAMESPACE = 'default'
     }
 
     stages {
 
-        // 1. Checkout source code from GitHub
+        // ============================================================
+        // 1. CHECKOUT
+        // ============================================================
         stage('Checkout') {
             steps {
                 checkout scm
 
                 script {
-                    env.IMAGE_TAG = sh(
+                    IMAGE_TAG = sh(
                         script: 'git rev-parse --short=12 HEAD',
                         returnStdout: true
                     ).trim()
 
-                    if (!env.IMAGE_TAG) {
-                        error('Could not determine Git commit for image tag.')
-                    }
-
-                    echo "Building images with tag: ${env.IMAGE_TAG}"
+                    echo "Building images with tag: ${IMAGE_TAG}"
                 }
             }
         }
 
-        // 2. Build and push Docker images
+
+        // ============================================================
+        // 2. BUILD + PUSH DOCKER IMAGES
+        // ============================================================
         stage('Build and push images') {
             steps {
+
                 withCredentials([
                     usernamePassword(
                         credentialsId: 'dockerhub-credentials',
-                        usernameVariable: 'DOCKERHUB_USER',
+                        usernameVariable: 'DOCKERHUB_LOGIN_USER',
                         passwordVariable: 'DOCKERHUB_TOKEN'
                     )
                 ]) {
-                    sh '''#!/usr/bin/env bash
-                        set -euo pipefail
 
-                        echo "Logging in to Docker Hub..."
+                    sh '''
+                        set -e
 
-                        printf '%s' "$DOCKERHUB_TOKEN" | docker login \
-                            --username "$DOCKERHUB_USER" \
+                        echo "=========================================="
+                        echo "Logging in to Docker Hub"
+                        echo "=========================================="
+
+                        echo "$DOCKERHUB_TOKEN" | docker login \
+                            -u "$DOCKERHUB_LOGIN_USER" \
                             --password-stdin
 
-                        echo "Building backend image..."
+                        echo "Docker login successful"
+                        echo "Docker user: $DOCKERHUB_LOGIN_USER"
+
+                        echo "Docker server information:"
+                        docker info --format 'Docker Server: {{.ServerVersion}}'
+
+                        echo "Docker context:"
+                        docker context show
+
+
+                        echo "=========================================="
+                        echo "Building backend image"
+                        echo "=========================================="
 
                         docker build \
-                            -t "$DOCKERHUB_NAMESPACE/realsite-backend:$IMAGE_TAG" \
-                            -f backend/Dockerfile backend
+                            -t "$BACKEND_IMAGE:$IMAGE_TAG" \
+                            ./backend
 
-                        echo "Building frontend image..."
+
+                        echo "=========================================="
+                        echo "Building frontend image"
+                        echo "=========================================="
 
                         docker build \
-                            -t "$DOCKERHUB_NAMESPACE/realsite-frontend:$IMAGE_TAG" \
-                            -f frontend/Dockerfile frontend
+                            -t "$FRONTEND_IMAGE:$IMAGE_TAG" \
+                            ./frontend
 
-                        echo "Pushing backend image..."
 
-                        docker push \
-                            "$DOCKERHUB_NAMESPACE/realsite-backend:$IMAGE_TAG"
+                        echo "=========================================="
+                        echo "Pushing backend image"
+                        echo "=========================================="
 
-                        echo "Pushing frontend image..."
+                        docker push "$BACKEND_IMAGE:$IMAGE_TAG"
 
-                        docker push \
-                            "$DOCKERHUB_NAMESPACE/realsite-frontend:$IMAGE_TAG"
 
-                        echo "Both Docker images pushed successfully."
+                        echo "=========================================="
+                        echo "Pushing frontend image"
+                        echo "=========================================="
+
+                        docker push "$FRONTEND_IMAGE:$IMAGE_TAG"
+
+
+                        echo "=========================================="
+                        echo "Docker images pushed successfully"
+                        echo "=========================================="
                     '''
                 }
             }
         }
 
-        // 3. Deploy application to Kubernetes
+
+        // ============================================================
+        // 3. DEPLOY TO KUBERNETES
+        // ============================================================
         stage('Deploy to Kubernetes') {
             steps {
+
                 withCredentials([
                     file(
                         credentialsId: 'kubeconfig',
-                        variable: 'KUBECONFIG'
-                    ),
-                    string(
-                        credentialsId: 'realsite-postgres-password',
-                        variable: 'POSTGRES_PASSWORD'
+                        variable: 'KUBECONFIG_FILE'
                     )
                 ]) {
-                    sh '''#!/usr/bin/env bash
-                        set -euo pipefail
 
-                        echo "Checking Kubernetes connection..."
+                    sh '''
+                        set -e
+
+                        export KUBECONFIG="$KUBECONFIG_FILE"
+
+                        echo "=========================================="
+                        echo "Kubernetes cluster information"
+                        echo "=========================================="
 
                         kubectl cluster-info
-                        kubectl get nodes
 
-                        echo "Creating PostgreSQL secret..."
+                        echo "Current Kubernetes context:"
+                        kubectl config current-context
 
-                        kubectl create secret generic realsite-postgres-secret \
-                            --namespace "$K8S_NAMESPACE" \
-                            --from-literal=POSTGRES_USER=portal \
-                            --from-literal=POSTGRES_PASSWORD="$POSTGRES_PASSWORD" \
-                            --from-literal=POSTGRES_DB=portal \
-                            --dry-run=client -o yaml | kubectl apply -f -
 
-                        echo "Creating backend secret..."
+                        echo "=========================================="
+                        echo "Applying backend configuration"
+                        echo "=========================================="
 
-                        kubectl create secret generic realsite-backend-secret \
-                            --namespace "$K8S_NAMESPACE" \
-                            --from-literal="DATABASE_URL=postgresql+psycopg://portal:$POSTGRES_PASSWORD@postgres:5432/portal" \
-                            --from-literal=SMTP_PASSWORD= \
-                            --dry-run=client -o yaml | kubectl apply -f -
-
-                        echo "Applying Kubernetes manifests..."
-
-                        kubectl apply -n "$K8S_NAMESPACE" \
+                        kubectl apply \
                             -f backend/k8s/configmap.yaml \
+                            -n "$K8S_NAMESPACE"
+
+                        kubectl apply \
                             -f backend/k8s/storage.yaml \
+                            -n "$K8S_NAMESPACE"
+
+                        kubectl apply \
                             -f backend/k8s/postgres.yaml \
+                            -n "$K8S_NAMESPACE"
+
+                        kubectl apply \
                             -f backend/k8s/deployment.yaml \
+                            -n "$K8S_NAMESPACE"
+
+                        kubectl apply \
                             -f backend/k8s/service.yaml \
+                            -n "$K8S_NAMESPACE"
+
+
+                        echo "=========================================="
+                        echo "Applying frontend configuration"
+                        echo "=========================================="
+
+                        kubectl apply \
                             -f frontend/k8s/deployment.yaml \
-                            -f frontend/k8s/service.yaml
+                            -n "$K8S_NAMESPACE"
 
-                        echo "Updating backend image..."
+                        kubectl apply \
+                            -f frontend/k8s/service.yaml \
+                            -n "$K8S_NAMESPACE"
 
-                        kubectl set image -n "$K8S_NAMESPACE" \
+
+                        echo "=========================================="
+                        echo "Updating backend image"
+                        echo "=========================================="
+
+                        kubectl set image deployment/realsite-backend \
+                            realsite-backend="$BACKEND_IMAGE:$IMAGE_TAG" \
+                            -n "$K8S_NAMESPACE"
+
+
+                        echo "=========================================="
+                        echo "Updating frontend image"
+                        echo "=========================================="
+
+                        kubectl set image deployment/realsite-frontend \
+                            realsite-frontend="$FRONTEND_IMAGE:$IMAGE_TAG" \
+                            -n "$K8S_NAMESPACE"
+
+
+                        echo "=========================================="
+                        echo "Waiting for backend rollout"
+                        echo "=========================================="
+
+                        kubectl rollout status \
                             deployment/realsite-backend \
-                            "realsite-backend=$DOCKERHUB_NAMESPACE/realsite-backend:$IMAGE_TAG"
+                            -n "$K8S_NAMESPACE" \
+                            --timeout=180s
 
-                        echo "Updating frontend image..."
 
-                        kubectl set image -n "$K8S_NAMESPACE" \
+                        echo "=========================================="
+                        echo "Waiting for frontend rollout"
+                        echo "=========================================="
+
+                        kubectl rollout status \
                             deployment/realsite-frontend \
-                            "realsite-frontend=$DOCKERHUB_NAMESPACE/realsite-frontend:$IMAGE_TAG"
-
-                        echo "Waiting for PostgreSQL rollout..."
-
-                        kubectl rollout status -n "$K8S_NAMESPACE" \
-                            deployment/realsite-postgres \
+                            -n "$K8S_NAMESPACE" \
                             --timeout=180s
 
-                        echo "Waiting for Redis rollout..."
 
-                        kubectl rollout status -n "$K8S_NAMESPACE" \
-                            deployment/realsite-redis \
-                            --timeout=180s
+                        echo "=========================================="
+                        echo "Kubernetes pods"
+                        echo "=========================================="
 
-                        echo "Waiting for backend rollout..."
+                        kubectl get pods \
+                            -n "$K8S_NAMESPACE" \
+                            -o wide
 
-                        kubectl rollout status -n "$K8S_NAMESPACE" \
-                            deployment/realsite-backend \
-                            --timeout=240s
 
-                        echo "Waiting for frontend rollout..."
+                        echo "=========================================="
+                        echo "Kubernetes services"
+                        echo "=========================================="
 
-                        kubectl rollout status -n "$K8S_NAMESPACE" \
-                            deployment/realsite-frontend \
-                            --timeout=180s
+                        kubectl get services \
+                            -n "$K8S_NAMESPACE"
 
-                        echo "Kubernetes deployment completed successfully."
 
-                        kubectl get pods -n "$K8S_NAMESPACE"
-                        kubectl get services -n "$K8S_NAMESPACE"
+                        echo "=========================================="
+                        echo "Deployment completed successfully"
+                        echo "=========================================="
                     '''
                 }
             }
         }
     }
 
-    // 4. Post-build actions
+
+    // ================================================================
+    // POST ACTIONS
+    // ================================================================
     post {
-        always {
-            sh '''
-                docker logout >/dev/null 2>&1 || true
-            '''
-        }
 
         success {
-            echo 'SUCCESS: ATPL Realsite deployment completed!'
-            echo 'Use: kubectl port-forward service/realsite-frontend 8090:80'
+            echo "=========================================="
+            echo "SUCCESS: CI/CD pipeline completed"
+            echo "Image tag: ${IMAGE_TAG}"
+            echo "=========================================="
         }
 
         failure {
-            echo 'FAILED: Check Jenkins Console Output for the failed stage.'
+            echo "=========================================="
+            echo "FAILED: Check Jenkins Console Output"
+            echo "=========================================="
+        }
+
+        always {
+            sh '''
+                docker logout || true
+            '''
         }
     }
 }
