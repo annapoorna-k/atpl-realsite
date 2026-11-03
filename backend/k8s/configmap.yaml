@@ -1,0 +1,19 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: realsite-backend-config
+  namespace: default
+  labels:
+    app.kubernetes.io/name: realsite-backend
+    app.kubernetes.io/managed-by: containerization-assist
+data:
+  REDIS_URL: "redis://redis:6379/0"
+  COOKIE_SECURE: "false"
+  SEED_DEMO: "true"
+  DEMO_ACCOUNTS_ENABLED: "true"
+  UPLOAD_DIR: "/app/uploads"
+  ACCOUNT_EMAIL_MODE: "demo"
+  SMTP_HOST: ""
+  SMTP_PORT: "587"
+  SMTP_USER: ""
+  SMTP_FROM: ""

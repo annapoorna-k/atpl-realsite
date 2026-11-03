@@ -1,0 +1,44 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: realsite-uploads
+  namespace: default
+  labels:
+    app.kubernetes.io/name: realsite-backend
+    app.kubernetes.io/managed-by: containerization-assist
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: realsite-redis-data
+  namespace: default
+  labels:
+    app.kubernetes.io/name: realsite-redis
+    app.kubernetes.io/managed-by: containerization-assist
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: realsite-postgres-data
+  namespace: default
+  labels:
+    app.kubernetes.io/name: realsite-postgres
+    app.kubernetes.io/managed-by: containerization-assist
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi

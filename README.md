@@ -51,6 +51,28 @@ docker compose down
 
 `down` preserves PostgreSQL and Redis volumes. Do not add `-v` unless you intend to delete the stored accounts, listings, favourites, and enquiries. The stack uses its own Compose project and exposes only the web application on loopback port 8090.
 
+## Deploy with Jenkins to Kubernetes
+
+The root [Jenkinsfile](Jenkinsfile) builds and pushes the frontend and backend images to Docker Hub, then deploys the frontend, backend, PostgreSQL, and Redis from `frontend/k8s/` and `backend/k8s/`. Create Docker Hub repositories named `realsite-frontend` and `realsite-backend` under the configured namespace (`yashuraj` by default).
+
+Use a Jenkins agent with Docker (including access to its daemon) and `kubectl`, plus network access to both Docker Hub and the target Kubernetes API. Add these Jenkins credentials:
+
+| ID | Type | Value |
+| --- | --- | --- |
+| `dockerhub-credentials` | Username with password | Docker Hub username and access token |
+| `kubeconfig` | Secret file | Kubeconfig for the target cluster |
+| `realsite-postgres-password` | Secret text | Strong URL-safe password for the PostgreSQL database |
+
+For a new database password, generate a URL-safe value with `openssl rand -hex 32`. If PostgreSQL has already initialized its persistent volume, use the same password it was initialized with; changing the Kubernetes Secret alone does not change the database user's password. The pipeline creates/updates Kubernetes Secrets from Jenkins credentials and intentionally does not apply the placeholder `secret.yaml` files.
+
+Create a Pipeline job pointing at this repository and run it. After a successful deployment, access the site with:
+
+```bash
+kubectl port-forward service/realsite-frontend 8090:80
+```
+
+Keep that command running and open http://localhost:8090. The API docs are at http://localhost:8090/api/docs.
+
 ## What works
 
 - India homepage with photographic hero, city search suggestions, listing carousels, recent views, and buy/rent/sell actions.
